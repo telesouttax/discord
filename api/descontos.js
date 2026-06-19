@@ -10,57 +10,68 @@ const CANAIS = {
 };
 
 const FEEDS = [
-  { url: 'https://www.pelando.com.br/sitemap-deals.xml',  fonte: 'Pelando', canal: 'ofertas',    cor: 0xe74c3c, emoji: '🔥' },
+  { url: 'https://clubedospoupadores.com/categoria/ofertas/feed', fonte: 'Clube dos Poupadores', canal: 'ofertas', cor: 0xe74c3c, emoji: '🔥' },
+  { url: 'https://clubedospoupadores.com/categoria/eletronicos/feed', fonte: 'Clube dos Poupadores', canal: 'tecnologia', cor: 0x3498db, emoji: '💻' },
+  { url: 'https://clubedospoupadores.com/categoria/moda/feed', fonte: 'Clube dos Poupadores', canal: 'roupas', cor: 0xff6b6b, emoji: '👕' },
+  { url: 'https://clubedospoupadores.com/categoria/casa/feed', fonte: 'Clube dos Poupadores', canal: 'casa', cor: 0x2ecc71, emoji: '🏠' },
+  { url: 'https://clubedospoupadores.com/categoria/games/feed', fonte: 'Clube dos Poupadores', canal: 'games', cor: 0x9b59b6, emoji: '🎮' },
 ];
 
-// Busca deals do Pelando via sitemap público
-async function buscarPelando() {
+const posted = new Set();
+
+function extrairTexto(str) {
+  if (!str) return '';
+  return str.replace(/<[^>]*>/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim();
+}
+
+function extrairImagem(item) {
+  const media = item.match(/<media:content[^>]+url="([^"]+)"/);
+  if (media) return media[1];
+  const enc = item.match(/<enclosure[^>]+url="([^"]+)"/);
+  if (enc) return enc[1];
+  const img = item.match(/<img[^>]+src="([^"]+)"/);
+  if (img) return img[1];
+  return null;
+}
+
+async function parseFeed(feed) {
   try {
-    const res = await fetch('https://www.pelando.com.br/sitemap-deals.xml', {
+    const res = await fetch(feed.url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)' },
       signal: AbortSignal.timeout(10000),
     });
-    const status = res.status;
-    const text = await res.text();
-    return { status, preview: text.slice(0, 300) };
-  } catch (e) {
-    return { error: e.message };
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+    return items.slice(0, 1).map(item => {
+      const titulo = extrairTexto(item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || '');
+      const link = extrairTexto(item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || '');
+      const desc = extrairTexto(item.match(/<description>([\s\S]*?)<\/description>/)?.[1] || '').slice(0, 300);
+      const imagem = extrairImagem(item);
+      return { titulo, link, desc, imagem, fonte: feed.fonte, canal: feed.canal, cor: feed.cor, emoji: feed.emoji };
+    }).filter(n => n.titulo && n.link && !posted.has(n.titulo));
+  } catch {
+    return [];
   }
 }
 
-async function buscarPelandoAPI() {
-  try {
-    const res = await fetch('https://www.pelando.com.br/api/deals/hot?page=1&pageSize=5', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)',
-        'Accept': 'application/json',
-        'Referer': 'https://www.pelando.com.br',
-      },
-      signal: AbortSignal.timeout(10000),
-    });
-    const status = res.status;
-    const text = await res.text();
-    return { status, preview: text.slice(0, 500) };
-  } catch (e) {
-    return { error: e.message };
-  }
-}
-
-async function buscarPromobit() {
-  try {
-    const res = await fetch('https://www.promobit.com.br/api/offers?page=1&per_page=3', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)',
-        'Accept': 'application/json',
-      },
-      signal: AbortSignal.timeout(10000),
-    });
-    const status = res.status;
-    const text = await res.text();
-    return { status, preview: text.slice(0, 500) };
-  } catch (e) {
-    return { error: e.message };
-  }
+async function postarNoDiscord(canalId, item) {
+  if (!canalId) return;
+  posted.add(item.titulo);
+  const embed = {
+    title: `${item.emoji} ${item.titulo}`.slice(0, 256),
+    url: item.link,
+    description: item.desc || null,
+    color: item.cor,
+    footer: { text: `🛍️ ${item.fonte} • Clique no título para ver a oferta` },
+    timestamp: new Date().toISOString(),
+  };
+  if (item.imagem) embed.image = { url: item.imagem };
+  await fetch(`https://discord.com/api/v10/channels/${canalId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ embeds: [embed] }),
+  });
 }
 
 export default async function handler(req) {
@@ -71,17 +82,29 @@ export default async function handler(req) {
     });
   }
 
-  const [pelando, pelandoApi, promobit] = await Promise.all([
-    buscarPelando(),
-    buscarPelandoAPI(),
-    buscarPromobit(),
-  ]);
+  let total = 0;
+  const erros = [];
+
+  for (const feed of FEEDS) {
+    try {
+      const items = await parseFeed(feed);
+      const canalId = CANAIS[feed.canal];
+      for (const item of items) {
+        await postarNoDiscord(canalId, item);
+        total++;
+        await new Promise(r => setTimeout(r, 500));
+      }
+    } catch (e) {
+      erros.push(`${feed.canal}: ${e.message}`);
+    }
+  }
 
   return new Response(JSON.stringify({
-    pelando_sitemap: pelando,
-    pelando_api: pelandoApi,
-    promobit_api: promobit,
-  }, null, 2), { headers: { 'Content-Type': 'application/json' } });
+    ok: true,
+    postadas: total,
+    erros: erros.length ? erros : undefined,
+    horario: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+  }), { headers: { 'Content-Type': 'application/json' } });
 }
 
 export const config = { runtime: 'edge' };

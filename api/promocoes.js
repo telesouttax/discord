@@ -13,49 +13,60 @@ async function scrape(url) {
   return res.text();
 }
 
+function normalizarTitulo(str) {
+  return str.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 30);
+}
+
 async function buscarMLOfertas() {
   const html = await scrape('https://www.mercadolivre.com.br/ofertas');
   const produtos = [];
 
-  // Divide por card
-  const cards = html.split('class="poly-card');
-
-  // Coleta imagens e títulos separadamente em ordem
-  const imagens = [];
-  const blocosTitulo = [];
-
-  for (const card of cards) {
-    const imgMatch = card.match(/src="(https:\/\/http2\.mlstatic\.com\/D_[^"]+\.webp)"/);
-    if (imgMatch) imagens.push(imgMatch[1]);
-
-    const tituloMatch = card.match(/class="poly-component__title">([^<]+)<\/a>/);
-    if (tituloMatch) blocosTitulo.push(card);
+  // Monta mapa de imagens pelo atributo alt (que contém o título do produto)
+  const mapaImagens = {};
+  const imgRegex = /<img[^>]+class="poly-component__picture"[^>]+src="(https:\/\/http2\.mlstatic\.com\/D_[^"]+)"[^>]+alt="([^"]+)"/g;
+  for (const match of html.matchAll(imgRegex)) {
+    const url = match[1];
+    const alt = normalizarTitulo(match[2]);
+    mapaImagens[alt] = url;
   }
 
-  // Pareia imagem com título pelo índice
-  for (let i = 0; i < Math.min(blocosTitulo.length, 10); i++) {
-    const bloco = blocosTitulo[i];
-    const titulo = bloco.match(/class="poly-component__title">([^<]+)<\/a>/)?.[1]?.trim();
+  // Extrai cards com título
+  const cards = html.split('class="poly-card');
+  for (const card of cards.slice(1)) {
+    const tituloMatch = card.match(/class="poly-component__title">([^<]+)<\/a>/);
+    const titulo = tituloMatch?.[1]?.trim();
     if (!titulo || posted.has(titulo)) continue;
 
-    const link = bloco.match(/href="(https:\/\/www\.mercadolivre\.com\.br\/[^"#]+)/)?.[1];
+    const link = card.match(/href="(https:\/\/www\.mercadolivre\.com\.br\/[^"#]+)/)?.[1];
     if (!link) continue;
 
-    const precoMatch = bloco.match(/aria-label="Agora:\s*([^"]+)"/);
+    // Busca imagem pelo alt que bate com o título
+    const chave = normalizarTitulo(titulo);
+    let imagem = mapaImagens[chave] || null;
+
+    // Se não achou exato, tenta match parcial
+    if (!imagem) {
+      for (const [alt, url] of Object.entries(mapaImagens)) {
+        if (alt.includes(chave.slice(0, 15)) || chave.includes(alt.slice(0, 15))) {
+          imagem = url;
+          break;
+        }
+      }
+    }
+
+    const precoMatch = card.match(/aria-label="Agora:\s*([^"]+)"/);
     const preco = precoMatch ? `R$ ${precoMatch[1].replace(' reais', '').trim()}` : null;
 
-    const precoAntigoMatch = bloco.match(/andes-money-amount__fraction[^>]*>(\d[\d.]*)<\/span><\/s>/);
+    const precoAntigoMatch = card.match(/andes-money-amount__fraction[^>]*>(\d[\d.]*)<\/span><\/s>/);
     const precoAntigo = precoAntigoMatch ? `R$ ${precoAntigoMatch[1]}` : null;
 
-    const descontoMatch = bloco.match(/(\d+)%\s*OFF/i);
+    const descontoMatch = card.match(/(\d+)%\s*OFF/i);
     const desconto = descontoMatch ? descontoMatch[1] : null;
 
-    const badgeMatch = bloco.match(/class="poly-component__highlight">([^<]+)</);
+    const badgeMatch = card.match(/class="poly-component__highlight">([^<]+)</);
     const badge = badgeMatch ? badgeMatch[1] : null;
 
-    const freteGratis = bloco.includes('Frete grátis') || bloco.includes('frete-gratis');
-
-    const imagem = imagens[i] || null;
+    const freteGratis = card.includes('Frete grátis') || card.includes('frete-gratis');
 
     let desc = '';
     if (preco) desc += `💰 **Preço:** ${preco}\n`;
@@ -65,6 +76,7 @@ async function buscarMLOfertas() {
     if (badge) desc += `⚡ ${badge}`;
 
     produtos.push({ titulo: titulo.slice(0, 200), link, desc: desc.trim(), imagem });
+    if (produtos.length >= 10) break;
   }
 
   return produtos;
@@ -77,10 +89,10 @@ async function postarNoDiscord(item) {
     url: item.link,
     description: item.desc || null,
     color: 0xff6600,
-    image: item.imagem ? { url: item.imagem } : undefined,
     footer: { text: '🛍️ Mercado Livre • Clique no título para comprar' },
     timestamp: new Date().toISOString(),
   };
+  if (item.imagem) embed.image = { url: item.imagem };
   const res = await fetch(`https://discord.com/api/v10/channels/${CANAL_OFERTAS}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' },

@@ -48,7 +48,7 @@ async function handleCriarCanal(guildId, options) {
   const nome = options.find(o => o.name === 'nome')?.value;
   const tipo = options.find(o => o.name === 'tipo')?.value || 'texto';
   const limite = options.find(o => o.name === 'limite')?.value || 0;
-  const typeMap = { texto: 0, voz: 2, anuncio: 5 };
+  const typeMap = { texto: 0, voz: 2, anuncio: 6 };
   const body = { name: nome.toLowerCase().replace(/\s+/g, '-'), type: typeMap[tipo] ?? 0 };
   if (tipo === 'voz' && limite > 0) body.user_limit = limite;
   await discordRequest(`/guilds/${guildId}/channels`, 'POST', body);
@@ -82,7 +82,7 @@ async function handleSetupCompleto(guildId, options) {
       categorias: ['📢 INFORMAÇÕES', '💬 COMUNIDADE', '🎮 ENTRETENIMENTO'],
       texto: [
         { name: 'boas-vindas', type: 0 }, { name: 'regras', type: 0 },
-        { name: 'anuncios', type: 5 }, { name: 'geral', type: 0 },
+        { name: "anuncios", type: 0 }, { name: 'geral', type: 0 },
         { name: 'off-topic', type: 0 }, { name: 'memes', type: 0 },
       ],
       voz: [
@@ -95,7 +95,7 @@ async function handleSetupCompleto(guildId, options) {
     gaming: {
       categorias: ['📢 INFO', '🎮 GAMING', '🗣️ CHAT'],
       texto: [
-        { name: 'regras', type: 0 }, { name: 'anuncios', type: 5 },
+        { name: 'regras', type: 0 }, { name: "anuncios", type: 0 },
         { name: 'geral', type: 0 }, { name: 'procurar-squad', type: 0 }, { name: 'clips', type: 0 },
       ],
       voz: [

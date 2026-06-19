@@ -1,7 +1,6 @@
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CRON_SECRET = process.env.CRON_SECRET;
 
-// IDs dos canais — preencha depois de rodar /setup no seu servidor
 const CANAIS = {
   brasil:      process.env.CANAL_NOTICIAS_BRASIL,
   mundo:       process.env.CANAL_NOTICIAS_MUNDO,
@@ -9,21 +8,14 @@ const CANAIS = {
   esportes:    process.env.CANAL_NOTICIAS_ESPORTES,
 };
 
-// Feeds RSS dos portais
+// Apenas G1
 const FEEDS = [
-  { url: 'https://g1.globo.com/rss/g1/',                     fonte: 'G1',             canal: 'brasil',     cor: 0xe74c3c },
-  { url: 'https://g1.globo.com/rss/g1/mundo/',               fonte: 'G1 Mundo',       canal: 'mundo',      cor: 0xe74c3c },
-  { url: 'https://g1.globo.com/rss/g1/tecnologia/',          fonte: 'G1 Tecnologia',  canal: 'tecnologia', cor: 0x3498db },
-  { url: 'https://g1.globo.com/rss/g1/esportes/',            fonte: 'G1 Esportes',    canal: 'esportes',   cor: 0x2ecc71 },
-  { url: 'https://rss.uol.com.br/feed/noticias.xml',         fonte: 'UOL',            canal: 'brasil',     cor: 0xf39c12 },
-  { url: 'https://rss.uol.com.br/feed/tecnologia.xml',       fonte: 'UOL Tech',       canal: 'tecnologia', cor: 0xf39c12 },
-  { url: 'https://feeds.folha.uol.com.br/poder/rss091.xml',  fonte: 'Folha de SP',    canal: 'brasil',     cor: 0x9b59b6 },
-  { url: 'https://feeds.folha.uol.com.br/mundo/rss091.xml',  fonte: 'Folha Mundo',    canal: 'mundo',      cor: 0x9b59b6 },
-  { url: 'https://feeds.folha.uol.com.br/tec/rss091.xml',    fonte: 'Folha Tech',     canal: 'tecnologia', cor: 0x9b59b6 },
-  { url: 'https://feeds.folha.uol.com.br/esporte/rss091.xml',fonte: 'Folha Esportes', canal: 'esportes',   cor: 0x9b59b6 },
+  { url: 'https://g1.globo.com/rss/g1/',             fonte: 'G1',            canal: 'brasil',     cor: 0xe74c3c },
+  { url: 'https://g1.globo.com/rss/g1/mundo/',       fonte: 'G1 Mundo',      canal: 'mundo',      cor: 0xe74c3c },
+  { url: 'https://g1.globo.com/rss/g1/tecnologia/',  fonte: 'G1 Tecnologia', canal: 'tecnologia', cor: 0x3498db },
+  { url: 'https://g1.globo.com/rss/g1/esportes/',    fonte: 'G1 Esportes',   canal: 'esportes',   cor: 0x2ecc71 },
 ];
 
-// Armazena títulos já postados (memória da Edge Function — reinicia a cada deploy)
 const posted = new Set();
 
 function extrairTexto(str) {
@@ -49,9 +41,9 @@ async function parseFeed(feed) {
     });
     if (!res.ok) return [];
     const xml = await res.text();
-
     const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
-    return items.slice(0, 3).map(item => {
+    // Apenas 1 notícia por feed por hora
+    return items.slice(0, 1).map(item => {
       const titulo = extrairTexto(item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || '');
       const link = extrairTexto(item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || item.match(/<link\s+href="([^"]+)"/)?.[1] || '');
       const desc = extrairTexto(item.match(/<description>([\s\S]*?)<\/description>/)?.[1] || '').slice(0, 300);
@@ -67,7 +59,6 @@ async function parseFeed(feed) {
 async function postarNoDiscord(canalId, noticia) {
   if (!canalId) return;
   posted.add(noticia.titulo);
-
   const embed = {
     title: noticia.titulo.slice(0, 256),
     url: noticia.link,
@@ -76,9 +67,7 @@ async function postarNoDiscord(canalId, noticia) {
     footer: { text: `📰 ${noticia.fonte}` },
     timestamp: new Date().toISOString(),
   };
-
   if (noticia.imagem) embed.image = { url: noticia.imagem };
-
   await fetch(`https://discord.com/api/v10/channels/${canalId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' },
@@ -87,7 +76,6 @@ async function postarNoDiscord(canalId, noticia) {
 }
 
 export default async function handler(req) {
-  // Aceita GET (vindo do cron) ou POST
   const secret = req.headers.get('x-cron-secret') || new URL(req.url).searchParams.get('secret');
   if (secret !== CRON_SECRET) {
     return new Response(JSON.stringify({ error: 'Não autorizado' }), {
@@ -105,7 +93,6 @@ export default async function handler(req) {
       for (const noticia of noticias) {
         await postarNoDiscord(canalId, noticia);
         total++;
-        // Pequena pausa para não estourar rate limit do Discord
         await new Promise(r => setTimeout(r, 500));
       }
     } catch (e) {

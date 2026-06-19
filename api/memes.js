@@ -1,4 +1,60 @@
+const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CRON_SECRET = process.env.CRON_SECRET;
+
+const CANAL_MEMES = '1517633260790874243';
+
+const SUBREDDITS = ['memes', 'dankmemes', 'BrasilSimulator', 'eu_nvr', 'HUEstation'];
+
+const posted = new Set();
+
+async function buscarMemes() {
+  const memesTodos = [];
+
+  for (const sub of SUBREDDITS) {
+    try {
+      const res = await fetch(`https://meme-api.com/gimme/${sub}/3`, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      const memes = json.memes || [];
+      for (const m of memes) {
+        if (!m.nsfw && !m.spoiler && !posted.has(m.postLink) && m.url?.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+          memesTodos.push({
+            id: m.postLink,
+            titulo: m.title?.slice(0, 200) || 'Meme',
+            imagem: m.url,
+            upvotes: m.ups,
+            subreddit: `r/${m.subreddit}`,
+            link: m.postLink,
+          });
+        }
+      }
+    } catch { continue; }
+  }
+
+  // Embaralha e pega 5
+  return memesTodos.sort(() => Math.random() - 0.5).slice(0, 5);
+}
+
+async function postarNoDiscord(meme) {
+  posted.add(meme.id);
+  const embed = {
+    title: meme.titulo,
+    url: meme.link,
+    color: 0xff4500,
+    image: { url: meme.imagem },
+    footer: { text: `😂 ${meme.subreddit} • 👍 ${meme.upvotes?.toLocaleString('pt-BR') || '0'} upvotes` },
+    timestamp: new Date().toISOString(),
+  };
+  const res = await fetch(`https://discord.com/api/v10/channels/${CANAL_MEMES}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ embeds: [embed] }),
+  });
+  if (!res.ok) throw new Error(`Discord ${res.status}: ${await res.text()}`);
+}
 
 export default async function handler(req) {
   const secret = req.headers.get('x-cron-secret') || new URL(req.url).searchParams.get('secret');
@@ -8,44 +64,30 @@ export default async function handler(req) {
     });
   }
 
-  // Tenta diferentes abordagens
-  const testes = [
-    {
-      nome: 'reddit_json',
-      url: 'https://www.reddit.com/r/memes/hot.json?limit=3',
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-    },
-    {
-      nome: 'reddit_old',
-      url: 'https://old.reddit.com/r/memes/hot.json?limit=3',
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-    },
-    {
-      nome: 'meme_api',
-      url: 'https://meme-api.com/gimme/5',
-      headers: { 'Accept': 'application/json' },
-    },
-    {
-      nome: 'imgflip',
-      url: 'https://api.imgflip.com/get_memes',
-      headers: { 'Accept': 'application/json' },
-    },
-  ];
+  let total = 0;
+  const erros = [];
 
-  const resultados = {};
-  for (const teste of testes) {
-    try {
-      const res = await fetch(teste.url, { headers: teste.headers, signal: AbortSignal.timeout(8000) });
-      const text = await res.text();
-      resultados[teste.nome] = { status: res.status, preview: text.slice(0, 200) };
-    } catch (e) {
-      resultados[teste.nome] = { error: e.message };
+  try {
+    const memes = await buscarMemes();
+    for (const meme of memes) {
+      try {
+        await postarNoDiscord(meme);
+        total++;
+        await new Promise(r => setTimeout(r, 800));
+      } catch (e) {
+        erros.push(e.message);
+      }
     }
+  } catch (e) {
+    erros.push(e.message);
   }
 
-  return new Response(JSON.stringify(resultados, null, 2), {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  return new Response(JSON.stringify({
+    ok: true,
+    postados: total,
+    erros: erros.length ? erros : undefined,
+    horario: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+  }), { headers: { 'Content-Type': 'application/json' } });
 }
 
 export const config = { runtime: 'edge' };

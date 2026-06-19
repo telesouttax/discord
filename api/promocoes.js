@@ -2,7 +2,7 @@ const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CRON_SECRET = process.env.CRON_SECRET;
 const SCRAPINGBEE_KEY = process.env.SCRAPINGBEE_KEY;
 
-const CANAL_OFERTAS = process.env.CANAL_OFERTAS_DIA;
+const CANAL_OFERTAS = '1517633267443040458';
 
 const posted = new Set();
 
@@ -13,74 +13,74 @@ async function scrape(url) {
   return res.text();
 }
 
-function extrairTexto(str) {
-  if (!str) return '';
-  return str.replace(/<[^>]*>/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim();
-}
-
 async function buscarMLOfertas() {
   const html = await scrape('https://www.mercadolivre.com.br/ofertas');
   const produtos = [];
 
-  // Extrai cada card de produto
-  const cardRegex = /class="poly-component__title-wrapper">([\s\S]*?)<\/h3>/g;
-  const cards = [...html.matchAll(cardRegex)];
+  // Divide o HTML em blocos de cards
+  const blocos = html.split('poly-component__title-wrapper');
 
-  for (const card of cards.slice(0, 5)) {
-    const bloco = card[0];
-
-    // Extrai título
+  for (const bloco of blocos.slice(1, 15)) {
+    // Título
     const tituloMatch = bloco.match(/class="poly-component__title">([^<]+)<\/a>/);
     const titulo = tituloMatch ? tituloMatch[1].trim() : null;
     if (!titulo || posted.has(titulo)) continue;
 
-    // Extrai link
-    const linkMatch = bloco.match(/href="(https:\/\/www\.mercadolivre\.com\.br\/[^"]+)"/);
-    const link = linkMatch ? linkMatch[1].split('"')[0] : null;
+    // Link
+    const linkMatch = bloco.match(/href="(https:\/\/www\.mercadolivre\.com\.br\/[^"#]+)/);
+    const link = linkMatch ? linkMatch[1] : null;
     if (!link) continue;
 
-    // Extrai preço — busca no HTML em volta do card
-    const cardIdx = html.indexOf(titulo);
-    const vizinhanca = html.slice(Math.max(0, cardIdx - 500), cardIdx + 500);
+    // Preço atual
+    const precoMatch = bloco.match(/aria-label="Agora:\s*([^"]+)"/);
+    const preco = precoMatch ? `R$ ${precoMatch[1].replace(' reais', '').trim()}` : null;
 
-    const precoMatch = vizinhanca.match(/aria-label="Agora:\s*([^"]+)"/);
-    const preco = precoMatch ? `R$ ${precoMatch[1].replace('reais', '').trim()}` : null;
-
-    const precoAntigoMatch = vizinhanca.match(/andes-money-amount__fraction[^>]*>(\d[\d.]*)<\/span><\/s>/);
+    // Preço antigo (riscado)
+    const precoAntigoMatch = bloco.match(/andes-money-amount__fraction[^>]*>(\d[\d.]*)<\/span><\/s>/);
     const precoAntigo = precoAntigoMatch ? `R$ ${precoAntigoMatch[1]}` : null;
 
-    // Extrai imagem
-    const imgMatch = vizinhanca.match(/src="(https:\/\/http2\.mlstatic\.com\/[^"]+)"/);
-    const imagem = imgMatch ? imgMatch[1] : null;
+    // Desconto %
+    const descontoMatch = bloco.match(/(\d+)%\s*OFF/i);
+    const desconto = descontoMatch ? descontoMatch[1] : null;
 
-    // Extrai badge (OFERTA DO DIA, etc)
-    const badgeMatch = vizinhanca.match(/class="poly-component__highlight">([^<]+)</);
-    const badge = badgeMatch ? badgeMatch[1] : 'Promoção';
+    // Imagem — pega a URL da imagem do produto
+    const imgMatch = bloco.match(/src="(https:\/\/http2\.mlstatic\.com\/D_NQ_[^"]+)"/);
+    const imagem = imgMatch ? imgMatch[1].replace(/-[A-Z]\.(?:webp|jpg)/, '-O.webp') : null;
 
-    let desc = preco ? `💰 **Preço:** ${preco}` : '';
-    if (precoAntigo) desc += `\n~~De: ${precoAntigo}~~`;
-    desc += `\n🏷️ ${badge}`;
-    desc += '\n🚚 Ver frete no site';
+    // Badge
+    const badgeMatch = bloco.match(/class="poly-component__highlight">([^<]+)</);
+    const badge = badgeMatch ? badgeMatch[1] : null;
 
-    produtos.push({ titulo: titulo.slice(0, 200), link, desc, imagem, fonte: 'Mercado Livre', cor: 0xff6600, emoji: '🔥' });
+    // Frete grátis
+    const freteGratis = bloco.includes('Frete grátis') || bloco.includes('frete-gratis');
+
+    let desc = '';
+    if (preco) desc += `💰 **Preço:** ${preco}\n`;
+    if (precoAntigo) desc += `~~De: ${precoAntigo}~~\n`;
+    if (desconto) desc += `🏷️ **${desconto}% de desconto!**\n`;
+    if (freteGratis) desc += `🚚 **Frete grátis!**\n`;
+    if (badge) desc += `⚡ ${badge}`;
+
+    produtos.push({ titulo: titulo.slice(0, 200), link, desc: desc.trim(), imagem });
+
+    if (produtos.length >= 10) break;
   }
 
   return produtos;
 }
 
-async function postarNoDiscord(canalId, item) {
-  if (!canalId || !item.titulo) return;
+async function postarNoDiscord(item) {
   posted.add(item.titulo);
   const embed = {
-    title: `${item.emoji} ${item.titulo}`.slice(0, 256),
+    title: `🔥 ${item.titulo}`.slice(0, 256),
     url: item.link,
     description: item.desc || null,
-    color: item.cor,
-    footer: { text: `🛍️ ${item.fonte} • Clique no título para comprar` },
+    color: 0xff6600,
+    footer: { text: '🛍️ Mercado Livre • Clique no título para comprar' },
     timestamp: new Date().toISOString(),
   };
-  if (item.imagem) embed.thumbnail = { url: item.imagem };
-  const res = await fetch(`https://discord.com/api/v10/channels/${canalId}/messages`, {
+  if (item.imagem) embed.image = { url: item.imagem };
+  const res = await fetch(`https://discord.com/api/v10/channels/${CANAL_OFERTAS}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ embeds: [embed] }),
@@ -103,11 +103,11 @@ export default async function handler(req) {
     const produtos = await buscarMLOfertas();
     for (const item of produtos) {
       try {
-        await postarNoDiscord(CANAL_OFERTAS, item);
+        await postarNoDiscord(item);
         total++;
         await new Promise(r => setTimeout(r, 800));
       } catch (e) {
-        erros.push(e.message);
+        erros.push(`${item.titulo}: ${e.message}`);
       }
     }
   } catch (e) {

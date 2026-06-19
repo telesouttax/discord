@@ -9,49 +9,51 @@ const CANAIS = {
   games:      process.env.CANAL_GAMES_OFERTA,
 };
 
-// Feeds RSS que funcionam sem bloqueio
-const FEEDS = [
-  {
-    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.promobit.com.br/feed/',
-    fonte: 'Promobit', canal: 'ofertas', cor: 0xe74c3c, emoji: '🔥',
-  },
-  {
-    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.promobit.com.br/feed/?cat=informatica',
-    fonte: 'Promobit Tech', canal: 'tecnologia', cor: 0x3498db, emoji: '💻',
-  },
-  {
-    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.promobit.com.br/feed/?cat=games',
-    fonte: 'Promobit Games', canal: 'games', cor: 0x9b59b6, emoji: '🎮',
-  },
-  {
-    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.promobit.com.br/feed/?cat=moda',
-    fonte: 'Promobit Moda', canal: 'roupas', cor: 0xff6b6b, emoji: '👕',
-  },
-  {
-    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.promobit.com.br/feed/?cat=casa',
-    fonte: 'Promobit Casa', canal: 'casa', cor: 0x2ecc71, emoji: '🏠',
-  },
+// API oficial do Mercado Livre — sem bloqueio
+const BUSCAS = [
+  { query: 'oferta do dia',        canal: 'ofertas',    cor: 0xe74c3c, emoji: '🔥', fonte: 'Mercado Livre' },
+  { query: 'camiseta roupa',       canal: 'roupas',     cor: 0xff6b6b, emoji: '👕', fonte: 'Mercado Livre' },
+  { query: 'notebook celular',     canal: 'tecnologia', cor: 0x3498db, emoji: '💻', fonte: 'Mercado Livre' },
+  { query: 'decoracao casa',       canal: 'casa',       cor: 0x2ecc71, emoji: '🏠', fonte: 'Mercado Livre' },
+  { query: 'jogo videogame ps5',   canal: 'games',      cor: 0x9b59b6, emoji: '🎮', fonte: 'Mercado Livre' },
 ];
 
 const posted = new Set();
 
-async function parseFeed(feed) {
+async function buscarOfertas(busca) {
   try {
-    const res = await fetch(feed.url, { signal: AbortSignal.timeout(10000) });
+    const url = `https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(busca.query)}&sort=relevance&limit=1`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) return [];
     const json = await res.json();
-    if (json.status !== 'ok' || !json.items?.length) return [];
+    const items = json.results || [];
 
-    return json.items.slice(0, 1).map(item => ({
-      titulo: item.title?.slice(0, 256) || '',
-      link: item.link || '',
-      desc: item.description?.replace(/<[^>]*>/g, '').slice(0, 300) || '',
-      imagem: item.thumbnail || null,
-      fonte: feed.fonte,
-      canal: feed.canal,
-      cor: feed.cor,
-      emoji: feed.emoji,
-    })).filter(n => n.titulo && n.link && !posted.has(n.titulo));
+    return items.slice(0, 1).map(item => {
+      const desconto = item.original_price
+        ? Math.round((1 - item.price / item.original_price) * 100)
+        : null;
+
+      const preco = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.price);
+      const precoOriginal = item.original_price
+        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.original_price)
+        : null;
+
+      let desc = `💰 **Preço:** ${preco}`;
+      if (precoOriginal) desc += `\n~~${precoOriginal}~~`;
+      if (desconto) desc += `\n🏷️ **${desconto}% de desconto!**`;
+      if (item.shipping?.free_shipping) desc += '\n🚚 **Frete grátis!**';
+
+      return {
+        titulo: item.title?.slice(0, 256) || '',
+        link: item.permalink || '',
+        desc,
+        imagem: item.thumbnail?.replace('I.jpg', 'O.jpg') || null,
+        fonte: busca.fonte,
+        canal: busca.canal,
+        cor: busca.cor,
+        emoji: busca.emoji,
+      };
+    }).filter(n => n.titulo && n.link && !posted.has(n.titulo));
   } catch {
     return [];
   }
@@ -66,10 +68,10 @@ async function postarNoDiscord(canalId, oferta) {
     url: oferta.link,
     description: oferta.desc || null,
     color: oferta.cor,
-    footer: { text: `🛍️ ${oferta.fonte} • Clique no título para ver a oferta` },
+    footer: { text: `🛍️ ${oferta.fonte} • Clique no título para comprar` },
     timestamp: new Date().toISOString(),
   };
-  if (oferta.imagem) embed.image = { url: oferta.imagem };
+  if (oferta.imagem) embed.thumbnail = { url: oferta.imagem };
 
   await fetch(`https://discord.com/api/v10/channels/${canalId}/messages`, {
     method: 'POST',
@@ -89,17 +91,17 @@ export default async function handler(req) {
   let total = 0;
   const erros = [];
 
-  for (const feed of FEEDS) {
+  for (const busca of BUSCAS) {
     try {
-      const ofertas = await parseFeed(feed);
-      const canalId = CANAIS[feed.canal];
+      const ofertas = await buscarOfertas(busca);
+      const canalId = CANAIS[busca.canal];
       for (const oferta of ofertas) {
         await postarNoDiscord(canalId, oferta);
         total++;
         await new Promise(r => setTimeout(r, 500));
       }
     } catch (e) {
-      erros.push(`${feed.fonte}: ${e.message}`);
+      erros.push(`${busca.fonte} (${busca.canal}): ${e.message}`);
     }
   }
 

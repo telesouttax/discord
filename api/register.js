@@ -1,5 +1,6 @@
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const APP_ID = process.env.DISCORD_APP_ID;
+const GUILD_ID = '1517543745590005771';
 
 const commands = [
   {
@@ -66,7 +67,7 @@ export default async function handler(req) {
   }
 
   const res = await fetch(
-    `https://discord.com/api/v10/applications/${APP_ID}/commands`,
+    `https://discord.com/api/v10/applications/${APP_ID}/guilds/${GUILD_ID}/commands`,
     {
       method: 'PUT',
       headers: {
@@ -88,7 +89,7 @@ export default async function handler(req) {
   const data = await res.json();
   const names = data.map(c => '/' + c.name);
   return new Response(
-    JSON.stringify({ ok: true, message: `${data.length} comandos registrados!`, comandos: names }),
+    JSON.stringify({ ok: true, message: `${data.length} comandos registrados no servidor!`, comandos: names }),
     { headers: { 'Content-Type': 'application/json' } }
   );
 }

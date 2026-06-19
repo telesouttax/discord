@@ -1,5 +1,8 @@
 const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const CLOUDINARY_CLOUD = process.env.CLOUDINARY_CLOUD;
+const CLOUDINARY_KEY = process.env.CLOUDINARY_KEY;
+const CLOUDINARY_SECRET = process.env.CLOUDINARY_SECRET;
 const DISCORD_API = 'https://discord.com/api/v10';
 
 async function verifyRequest(rawBody, signature, timestamp) {
@@ -32,6 +35,56 @@ async function discordRequest(endpoint, method = 'GET', body = null) {
 
 function respond(data) {
   return new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json' } });
+}
+
+// Efeitos disponíveis
+const EFEITOS = [
+  { nome: 'Distorcido', transformacao: 'e_distort:20:80:80:20:20:120:120:80' },
+  { nome: 'Espelhado', transformacao: 'e_hflip' },
+  { nome: 'Pixelado', transformacao: 'e_pixelate:15' },
+  { nome: 'Negativo', transformacao: 'e_negate' },
+  { nome: 'Cartoon', transformacao: 'e_cartoonify' },
+  { nome: 'Sépia', transformacao: 'e_sepia:80' },
+  { nome: 'Blur extremo', transformacao: 'e_blur:800' },
+  { nome: 'Oil Paint', transformacao: 'e_oil_paint:40' },
+  { nome: 'Vignette', transformacao: 'e_vignette:80' },
+  { nome: 'Colorido maluco', transformacao: 'e_art:peacock' },
+];
+
+async function zoarImagem(avatarUrl, efeito) {
+  // Faz upload da imagem para o Cloudinary
+  const timestamp = Math.floor(Date.now() / 1000);
+  const transformation = efeito.transformacao;
+
+  // Gera assinatura
+  const strToSign = `timestamp=${timestamp}&upload_preset=ml_default`;
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(CLOUDINARY_SECRET);
+  const msgData = encoder.encode(strToSign);
+
+  const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', cryptoKey, msgData);
+  const signature = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  // Upload via URL
+  const formData = new URLSearchParams();
+  formData.append('file', avatarUrl);
+  formData.append('upload_preset', 'ml_default');
+  formData.append('timestamp', timestamp.toString());
+  formData.append('api_key', CLOUDINARY_KEY);
+  formData.append('transformation', transformation);
+
+  const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!uploadRes.ok) throw new Error(`Cloudinary upload failed: ${await uploadRes.text()}`);
+  const uploadData = await uploadRes.json();
+
+  // Aplica transformação na URL
+  const urlParts = uploadData.secure_url.split('/upload/');
+  return `${urlParts[0]}/upload/${transformation}/${urlParts[1]}`;
 }
 
 async function handleCriarCanal(guildId, options) {
@@ -67,7 +120,6 @@ async function handleCriarCategoria(guildId, options) {
 
 async function handleSetupCompleto(guildId, options) {
   const template = options.find(o => o.name === 'template')?.value || 'completo';
-
   const templates = {
     completo: {
       cargos: [
@@ -80,95 +132,17 @@ async function handleSetupCompleto(guildId, options) {
         { name: '🤖 Bot', color: 0x3498db, hoist: true, mentionable: false },
       ],
       categorias_e_canais: [
-        {
-          categoria: '📋 ─── INÍCIO ───',
-          canais: [
-            { name: '📜・regras', type: 0 },
-            { name: '📣・anuncios', type: 0 },
-            { name: '👋・boas-vindas', type: 0 },
-            { name: '🎭・cargos', type: 0 },
-            { name: '❓・faq', type: 0 },
-          ],
-        },
-        {
-          categoria: '💬 ─── GERAL ───',
-          canais: [
-            { name: '💬・geral', type: 0 },
-            { name: '😂・memes', type: 0 },
-            { name: '📸・fotos-e-videos', type: 0 },
-            { name: '🎵・musica', type: 0 },
-            { name: '🔗・links-uteis', type: 0 },
-          ],
-        },
-        {
-          categoria: '📰 ─── NOTÍCIAS ───',
-          canais: [
-            { name: '🗞️・noticias-brasil', type: 0 },
-            { name: '🌍・noticias-mundo', type: 0 },
-            { name: '💻・noticias-tecnologia', type: 0 },
-            { name: '⚽・noticias-esportes', type: 0 },
-          ],
-        },
-        {
-          categoria: '🛍️ ─── DESCONTOS ───',
-          canais: [
-            { name: '🔥・ofertas-do-dia', type: 0 },
-            { name: '👕・roupas-e-calcados', type: 0 },
-            { name: '📱・tecnologia-em-oferta', type: 0 },
-            { name: '🏠・casa-e-decoracao', type: 0 },
-            { name: '🎮・games-em-oferta', type: 0 },
-          ],
-        },
-        {
-          categoria: '📚 ─── ESTUDOS ───',
-          canais: [
-            { name: '📖・material-de-estudo', type: 0 },
-            { name: '❓・duvidas', type: 0 },
-            { name: '📝・resumos', type: 0 },
-            { name: '🏆・conquistas', type: 0 },
-          ],
-        },
-        {
-          categoria: '💼 ─── NEGÓCIOS ───',
-          canais: [
-            { name: '💡・ideias-e-projetos', type: 0 },
-            { name: '🤝・parcerias', type: 0 },
-            { name: '📊・empreendedorismo', type: 0 },
-            { name: '💰・financas-e-investimentos', type: 0 },
-          ],
-        },
-        {
-          categoria: '🎮 ─── ENTRETENIMENTO ───',
-          canais: [
-            { name: '🎮・games', type: 0 },
-            { name: '🎬・filmes-e-series', type: 0 },
-            { name: '📚・livros-e-mangás', type: 0 },
-            { name: '🎵・playlist-da-galera', type: 0 },
-          ],
-        },
-        {
-          categoria: '🔊 ─── VOZ ───',
-          canais: [
-            { name: '🔊 Geral', type: 2, user_limit: 0 },
-            { name: '🎮 Gaming', type: 2, user_limit: 10 },
-            { name: '📚 Estudos', type: 2, user_limit: 8 },
-            { name: '💼 Reunião', type: 2, user_limit: 15 },
-            { name: '🎵 Lounge', type: 2, user_limit: 0 },
-            { name: '🔞 +18', type: 2, user_limit: 0 },
-          ],
-        },
-        {
-          categoria: '🛠️ ─── STAFF ───',
-          canais: [
-            { name: '🛡️・chat-staff', type: 0 },
-            { name: '📋・log-de-acoes', type: 0 },
-            { name: '🚨・denuncias', type: 0 },
-            { name: '📌・avisos-internos', type: 0 },
-          ],
-        },
+        { categoria: '📋 ─── INÍCIO ───', canais: [{ name: '📜・regras', type: 0 }, { name: '📣・anuncios', type: 0 }, { name: '👋・boas-vindas', type: 0 }, { name: '🎭・cargos', type: 0 }, { name: '❓・faq', type: 0 }] },
+        { categoria: '💬 ─── GERAL ───', canais: [{ name: '💬・geral', type: 0 }, { name: '😂・memes', type: 0 }, { name: '📸・fotos-e-videos', type: 0 }, { name: '🎵・musica', type: 0 }, { name: '🔗・links-uteis', type: 0 }] },
+        { categoria: '📰 ─── NOTÍCIAS ───', canais: [{ name: '🗞️・noticias-brasil', type: 0 }, { name: '🌍・noticias-mundo', type: 0 }, { name: '💻・noticias-tecnologia', type: 0 }, { name: '⚽・noticias-esportes', type: 0 }] },
+        { categoria: '🛍️ ─── DESCONTOS ───', canais: [{ name: '🔥・ofertas-do-dia', type: 0 }, { name: '👕・roupas-e-calcados', type: 0 }, { name: '📱・tecnologia-em-oferta', type: 0 }, { name: '🏠・casa-e-decoracao', type: 0 }, { name: '🎮・games-em-oferta', type: 0 }] },
+        { categoria: '📚 ─── ESTUDOS ───', canais: [{ name: '📖・material-de-estudo', type: 0 }, { name: '❓・duvidas', type: 0 }, { name: '📝・resumos', type: 0 }, { name: '🏆・conquistas', type: 0 }] },
+        { categoria: '💼 ─── NEGÓCIOS ───', canais: [{ name: '💡・ideias-e-projetos', type: 0 }, { name: '🤝・parcerias', type: 0 }, { name: '📊・empreendedorismo', type: 0 }, { name: '💰・financas-e-investimentos', type: 0 }] },
+        { categoria: '🎮 ─── ENTRETENIMENTO ───', canais: [{ name: '🎮・games', type: 0 }, { name: '🎬・filmes-e-series', type: 0 }, { name: '📚・livros-e-mangás', type: 0 }, { name: '🎵・playlist-da-galera', type: 0 }] },
+        { categoria: '🔊 ─── VOZ ───', canais: [{ name: '🔊 Geral', type: 2, user_limit: 0 }, { name: '🎮 Gaming', type: 2, user_limit: 10 }, { name: '📚 Estudos', type: 2, user_limit: 8 }, { name: '💼 Reunião', type: 2, user_limit: 15 }, { name: '🎵 Lounge', type: 2, user_limit: 0 }] },
+        { categoria: '🛠️ ─── STAFF ───', canais: [{ name: '🛡️・chat-staff', type: 0 }, { name: '📋・log-de-acoes', type: 0 }, { name: '🚨・denuncias', type: 0 }, { name: '📌・avisos-internos', type: 0 }] },
       ],
     },
-
     amigos: {
       cargos: [
         { name: '👑 Dono', color: 0xe74c3c, hoist: true, mentionable: true },
@@ -176,52 +150,21 @@ async function handleSetupCompleto(guildId, options) {
         { name: '😎 Amigo', color: 0x2ecc71, hoist: false, mentionable: false },
       ],
       categorias_e_canais: [
-        {
-          categoria: '📋 INFO',
-          canais: [
-            { name: '📜・regras', type: 0 },
-            { name: '👋・boas-vindas', type: 0 },
-          ],
-        },
-        {
-          categoria: '💬 CHAT',
-          canais: [
-            { name: '💬・geral', type: 0 },
-            { name: '😂・memes', type: 0 },
-            { name: '📸・fotos', type: 0 },
-            { name: '🎵・musica', type: 0 },
-          ],
-        },
-        {
-          categoria: '🔊 VOZ',
-          canais: [
-            { name: '🔊 Geral', type: 2, user_limit: 0 },
-            { name: '🎮 Games', type: 2, user_limit: 5 },
-            { name: '🎵 Lounge', type: 2, user_limit: 0 },
-          ],
-        },
+        { categoria: '📋 INFO', canais: [{ name: '📜・regras', type: 0 }, { name: '👋・boas-vindas', type: 0 }] },
+        { categoria: '💬 CHAT', canais: [{ name: '💬・geral', type: 0 }, { name: '😂・memes', type: 0 }, { name: '📸・fotos', type: 0 }, { name: '🎵・musica', type: 0 }] },
+        { categoria: '🔊 VOZ', canais: [{ name: '🔊 Geral', type: 2, user_limit: 0 }, { name: '🎮 Games', type: 2, user_limit: 5 }, { name: '🎵 Lounge', type: 2, user_limit: 0 }] },
       ],
     },
   };
-
   const t = templates[template] || templates.completo;
   let criados = { categorias: 0, canais: 0, cargos: 0 };
-
-  // Criar cargos
   for (const role of t.cargos) {
-    await discordRequest(`/guilds/${guildId}/roles`, 'POST', {
-      name: role.name, color: role.color, hoist: role.hoist, mentionable: role.mentionable,
-    });
+    await discordRequest(`/guilds/${guildId}/roles`, 'POST', { name: role.name, color: role.color, hoist: role.hoist, mentionable: role.mentionable });
     criados.cargos++;
   }
-
-  // Criar categorias e canais
   for (const bloco of t.categorias_e_canais) {
-    const cat = await discordRequest(`/guilds/${guildId}/channels`, 'POST', {
-      name: bloco.categoria, type: 4,
-    });
+    const cat = await discordRequest(`/guilds/${guildId}/channels`, 'POST', { name: bloco.categoria, type: 4 });
     criados.categorias++;
-
     for (const canal of bloco.canais) {
       const body = { name: canal.name, type: canal.type, parent_id: cat.id };
       if (canal.type === 2 && canal.user_limit !== undefined) body.user_limit = canal.user_limit;
@@ -229,8 +172,7 @@ async function handleSetupCompleto(guildId, options) {
       criados.canais++;
     }
   }
-
-  return `✅ **Setup "${template}" concluído!**\n📁 ${criados.categorias} categorias · 💬 ${criados.canais} canais · 🎭 ${criados.cargos} cargos\n\n> Os canais de 📰 Notícias e 🛍️ Descontos já estão criados e prontos para receber os bots em breve!`;
+  return `✅ **Setup "${template}" concluído!**\n📁 ${criados.categorias} categorias · 💬 ${criados.canais} canais · 🎭 ${criados.cargos} cargos`;
 }
 
 async function handleListar(guildId) {
@@ -243,6 +185,44 @@ async function handleListar(guildId) {
   const cats = channels.filter(c => c.type === 4).length;
   const roleList = roles.filter(r => r.name !== '@everyone').map(r => r.name).join(', ') || 'nenhum';
   return `📊 **Estrutura atual:**\n📁 **Categorias:** ${cats}\n💬 **Canais de texto:** ${texto}\n🔊 **Canais de voz:** ${voz}\n🎭 **Cargos:** ${roleList}`;
+}
+
+async function handleZoar(options, resolved) {
+  const userId = options.find(o => o.name === 'usuario')?.value;
+  const efeitoNome = options.find(o => o.name === 'efeito')?.value || 'aleatorio';
+
+  // Pega avatar do usuário
+  const user = resolved?.users?.[userId];
+  if (!user) return '❌ Usuário não encontrado!';
+
+  const avatarUrl = user.avatar
+    ? `https://cdn.discordapp.com/avatars/${userId}/${user.avatar}.png?size=256`
+    : `https://cdn.discordapp.com/embed/avatars/${parseInt(userId) % 5}.png`;
+
+  // Escolhe efeito
+  let efeito;
+  if (efeitoNome === 'aleatorio') {
+    efeito = EFEITOS[Math.floor(Math.random() * EFEITOS.length)];
+  } else {
+    efeito = EFEITOS.find(e => e.nome.toLowerCase() === efeitoNome.toLowerCase()) || EFEITOS[0];
+  }
+
+  try {
+    const imagemZoada = await zoarImagem(avatarUrl, efeito);
+    return {
+      type: 4,
+      data: {
+        content: `😂 <@${userId}> foi zoado com o efeito **${efeito.nome}**!`,
+        embeds: [{
+          image: { url: imagemZoada },
+          color: 0xff4500,
+          footer: { text: '😈 Construct Bot • Zoador de avatares' },
+        }],
+      },
+    };
+  } catch (e) {
+    return `❌ Erro ao zoar: ${e.message}`;
+  }
 }
 
 export default async function handler(req) {
@@ -258,17 +238,22 @@ export default async function handler(req) {
   const interaction = JSON.parse(rawBody);
   if (interaction.type === 1) return respond({ type: 1 });
   if (interaction.type === 2) {
-    const { name, options = [] } = interaction.data;
+    const { name, options = [], resolved } = interaction.data;
     const guildId = interaction.guild_id;
     try {
-      let message = '';
-      if (name === 'criar-canal') message = await handleCriarCanal(guildId, options);
-      else if (name === 'criar-cargo') message = await handleCriarCargo(guildId, options);
-      else if (name === 'criar-categoria') message = await handleCriarCategoria(guildId, options);
-      else if (name === 'setup') message = await handleSetupCompleto(guildId, options);
-      else if (name === 'listar') message = await handleListar(guildId);
-      else message = '❓ Comando não reconhecido.';
-      return respond({ type: 4, data: { content: message, flags: 64 } });
+      let result;
+      if (name === 'criar-canal') result = await handleCriarCanal(guildId, options);
+      else if (name === 'criar-cargo') result = await handleCriarCargo(guildId, options);
+      else if (name === 'criar-categoria') result = await handleCriarCategoria(guildId, options);
+      else if (name === 'setup') result = await handleSetupCompleto(guildId, options);
+      else if (name === 'listar') result = await handleListar(guildId);
+      else if (name === 'zoar') {
+        const res = await handleZoar(options, resolved);
+        if (typeof res === 'object' && res.type) return respond(res);
+        result = res;
+      }
+      else result = '❓ Comando não reconhecido.';
+      return respond({ type: 4, data: { content: result, flags: 64 } });
     } catch (err) {
       console.error(err);
       return respond({ type: 4, data: { content: `❌ Erro: ${err.message}`, flags: 64 } });

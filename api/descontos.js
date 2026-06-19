@@ -9,40 +9,27 @@ const CANAIS = {
   games:      process.env.CANAL_GAMES_OFERTA,
 };
 
-// Feeds RSS públicos do Mercado Livre e Amazon Brasil
+// Feeds RSS que funcionam sem bloqueio
 const FEEDS = [
   {
-    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://listado.mercadolivre.com.br/ofertas-do-dia/_Discount_10-100&format=rss',
-    fonte: 'Mercado Livre', canal: 'ofertas', cor: 0xffe600, emoji: '🛒',
+    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.promobit.com.br/feed/',
+    fonte: 'Promobit', canal: 'ofertas', cor: 0xe74c3c, emoji: '🔥',
   },
   {
-    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://listado.mercadolivre.com.br/moda-e-acessorios&format=rss',
-    fonte: 'Mercado Livre', canal: 'roupas', cor: 0xff6b6b, emoji: '👕',
+    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.promobit.com.br/feed/?cat=informatica',
+    fonte: 'Promobit Tech', canal: 'tecnologia', cor: 0x3498db, emoji: '💻',
   },
   {
-    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://listado.mercadolivre.com.br/eletronicos-e-tecnologia&format=rss',
-    fonte: 'Mercado Livre', canal: 'tecnologia', cor: 0x3498db, emoji: '💻',
+    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.promobit.com.br/feed/?cat=games',
+    fonte: 'Promobit Games', canal: 'games', cor: 0x9b59b6, emoji: '🎮',
   },
   {
-    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://listado.mercadolivre.com.br/casa-moveis-decoracao&format=rss',
-    fonte: 'Mercado Livre', canal: 'casa', cor: 0x2ecc71, emoji: '🏠',
+    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.promobit.com.br/feed/?cat=moda',
+    fonte: 'Promobit Moda', canal: 'roupas', cor: 0xff6b6b, emoji: '👕',
   },
   {
-    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://listado.mercadolivre.com.br/videogames&format=rss',
-    fonte: 'Mercado Livre', canal: 'games', cor: 0x9b59b6, emoji: '🎮',
-  },
-  // Amazon Brasil via rss2json
-  {
-    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.amazon.com.br/gp/rss/bestsellers/electronics',
-    fonte: 'Amazon Brasil', canal: 'tecnologia', cor: 0xff9900, emoji: '📦',
-  },
-  {
-    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.amazon.com.br/gp/rss/bestsellers/videogames',
-    fonte: 'Amazon Brasil', canal: 'games', cor: 0xff9900, emoji: '🎮',
-  },
-  {
-    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.amazon.com.br/gp/rss/bestsellers/sports',
-    fonte: 'Amazon Brasil', canal: 'ofertas', cor: 0xff9900, emoji: '🔥',
+    url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.promobit.com.br/feed/?cat=casa',
+    fonte: 'Promobit Casa', canal: 'casa', cor: 0x2ecc71, emoji: '🏠',
   },
 ];
 
@@ -50,7 +37,7 @@ const posted = new Set();
 
 async function parseFeed(feed) {
   try {
-    const res = await fetch(feed.url, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(feed.url, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) return [];
     const json = await res.json();
     if (json.status !== 'ok' || !json.items?.length) return [];
@@ -59,7 +46,7 @@ async function parseFeed(feed) {
       titulo: item.title?.slice(0, 256) || '',
       link: item.link || '',
       desc: item.description?.replace(/<[^>]*>/g, '').slice(0, 300) || '',
-      imagem: item.thumbnail || item.enclosure?.link || null,
+      imagem: item.thumbnail || null,
       fonte: feed.fonte,
       canal: feed.canal,
       cor: feed.cor,

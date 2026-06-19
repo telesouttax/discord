@@ -1,7 +1,81 @@
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CRON_SECRET = process.env.CRON_SECRET;
-const ML_CLIENT_ID = process.env.ML_CLIENT_ID;
-const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET;
+
+const CANAIS = {
+  ofertas:    process.env.CANAL_OFERTAS_DIA,
+  roupas:     process.env.CANAL_ROUPAS,
+  tecnologia: process.env.CANAL_TECH_OFERTA,
+  casa:       process.env.CANAL_CASA,
+  games:      process.env.CANAL_GAMES_OFERTA,
+};
+
+// Feeds RSS públicos que não bloqueiam servidores
+const FEEDS = [
+  { url: 'https://clubedospoupadores.com/feed',         fonte: 'Clube dos Poupadores', canal: 'ofertas',    cor: 0xe74c3c, emoji: '🔥' },
+  { url: 'https://www.tudocelular.com/rss.xml',         fonte: 'Tudo Celular',         canal: 'tecnologia', cor: 0x3498db, emoji: '📱' },
+  { url: 'https://www.tecmundo.com.br/rss',             fonte: 'TecMundo',             canal: 'tecnologia', cor: 0x2980b9, emoji: '💻' },
+  { url: 'https://ge.globo.com/rss/ge/',                fonte: 'Mercado Esportes',     canal: 'games',      cor: 0x9b59b6, emoji: '🎮' },
+  { url: 'https://feeds.feedburner.com/MdeMulher',      fonte: 'M de Mulher',          canal: 'roupas',     cor: 0xff6b6b, emoji: '👗' },
+  { url: 'https://casavogue.globo.com/rss',             fonte: 'Casa Vogue',           canal: 'casa',       cor: 0x2ecc71, emoji: '🏠' },
+];
+
+const posted = new Set();
+
+function extrairTexto(str) {
+  if (!str) return '';
+  return str.replace(/<[^>]*>/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim();
+}
+
+function extrairImagem(xml) {
+  const media = xml.match(/<media:content[^>]+url="([^"]+)"/);
+  if (media) return media[1];
+  const enc = xml.match(/<enclosure[^>]+url="([^"]+)"/);
+  if (enc) return enc[1];
+  const img = xml.match(/<img[^>]+src="([^"]+)"/);
+  if (img) return img[1];
+  return null;
+}
+
+async function parseFeed(feed) {
+  try {
+    const res = await fetch(feed.url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0; +https://discord.com)' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+
+    return items.slice(0, 1).map(item => {
+      const titulo = extrairTexto(item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || '');
+      const link = extrairTexto(item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || '');
+      const desc = extrairTexto(item.match(/<description>([\s\S]*?)<\/description>/)?.[1] || '').slice(0, 300);
+      const imagem = extrairImagem(item);
+      return { titulo, link, desc, imagem, fonte: feed.fonte, canal: feed.canal, cor: feed.cor, emoji: feed.emoji };
+    }).filter(n => n.titulo && n.link && !posted.has(n.titulo));
+  } catch {
+    return [];
+  }
+}
+
+async function postarNoDiscord(canalId, item) {
+  if (!canalId) return;
+  posted.add(item.titulo);
+  const embed = {
+    title: `${item.emoji} ${item.titulo}`.slice(0, 256),
+    url: item.link,
+    description: item.desc || null,
+    color: item.cor,
+    footer: { text: `🛍️ ${item.fonte}` },
+    timestamp: new Date().toISOString(),
+  };
+  if (item.imagem) embed.image = { url: item.imagem };
+  await fetch(`https://discord.com/api/v10/channels/${canalId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ embeds: [embed] }),
+  });
+}
 
 export default async function handler(req) {
   const secret = req.headers.get('x-cron-secret') || new URL(req.url).searchParams.get('secret');
@@ -11,38 +85,29 @@ export default async function handler(req) {
     });
   }
 
-  // Testa o token
-  const tokenRes = await fetch('https://api.mercadolibre.com/oauth/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: ML_CLIENT_ID,
-      client_secret: ML_CLIENT_SECRET,
-    }),
-  });
+  let total = 0;
+  const erros = [];
 
-  const tokenStatus = tokenRes.status;
-  const tokenBody = await tokenRes.text();
-
-  // Se token ok, testa busca
-  let searchResult = null;
-  if (tokenRes.ok) {
-    const token = JSON.parse(tokenBody).access_token;
-    const searchRes = await fetch('https://api.mercadolibre.com/sites/MLB/search?q=notebook&limit=1', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const searchBody = await searchRes.text();
-    searchResult = { status: searchRes.status, preview: searchBody.slice(0, 300) };
+  for (const feed of FEEDS) {
+    try {
+      const items = await parseFeed(feed);
+      const canalId = CANAIS[feed.canal];
+      for (const item of items) {
+        await postarNoDiscord(canalId, item);
+        total++;
+        await new Promise(r => setTimeout(r, 500));
+      }
+    } catch (e) {
+      erros.push(`${feed.fonte}: ${e.message}`);
+    }
   }
 
   return new Response(JSON.stringify({
-    client_id: ML_CLIENT_ID ? 'ok' : 'MISSING',
-    client_secret: ML_CLIENT_SECRET ? 'ok' : 'MISSING',
-    token_status: tokenStatus,
-    token_body: tokenBody.slice(0, 300),
-    search: searchResult,
-  }, null, 2), { headers: { 'Content-Type': 'application/json' } });
+    ok: true,
+    postadas: total,
+    erros: erros.length ? erros : undefined,
+    horario: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+  }), { headers: { 'Content-Type': 'application/json' } });
 }
 
 export const config = { runtime: 'edge' };

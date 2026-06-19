@@ -1,9 +1,26 @@
-import { verifyKey } from 'discord-interactions';
-
 const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DISCORD_API = 'https://discord.com/api/v10';
 
+// ── Verificação de assinatura via Web Crypto API (sem dependências externas) ──
+async function verifyRequest(rawBody, signature, timestamp) {
+  const encoder = new TextEncoder();
+  const keyBytes = hexToUint8Array(PUBLIC_KEY);
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw', keyBytes,
+    { name: 'Ed25519' },
+    false, ['verify']
+  );
+  const message = encoder.encode(timestamp + rawBody);
+  const sigBytes = hexToUint8Array(signature);
+  return crypto.subtle.verify('Ed25519', cryptoKey, sigBytes, message);
+}
+
+function hexToUint8Array(hex) {
+  return new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 async function discordRequest(endpoint, method = 'GET', body = null) {
   const res = await fetch(`${DISCORD_API}${endpoint}`, {
     method,
@@ -26,6 +43,7 @@ function respond(data) {
   });
 }
 
+// ── Command handlers ──────────────────────────────────────────────────────────
 async function handleCriarCanal(guildId, options) {
   const nome = options.find(o => o.name === 'nome')?.value;
   const tipo = options.find(o => o.name === 'tipo')?.value || 'texto';
@@ -137,15 +155,26 @@ async function handleListar(guildId) {
   return `📊 **Estrutura atual:**\n📁 **Categorias:** ${cats}\n💬 **Texto:** ${texto}\n🔊 **Voz:** ${voz}\n🎭 **Cargos:** ${roleList}`;
 }
 
+// ── Main handler ──────────────────────────────────────────────────────────────
 export default async function handler(req) {
   if (req.method !== 'POST') return new Response('Método não permitido', { status: 405 });
+
   const signature = req.headers.get('x-signature-ed25519');
   const timestamp = req.headers.get('x-signature-timestamp');
   const rawBody = await req.text();
-  const isValid = await verifyKey(rawBody, signature, timestamp, PUBLIC_KEY);
+
+  let isValid = false;
+  try {
+    isValid = await verifyRequest(rawBody, signature, timestamp);
+  } catch (e) {
+    return new Response('Erro na verificação', { status: 401 });
+  }
   if (!isValid) return new Response('Assinatura inválida', { status: 401 });
+
   const interaction = JSON.parse(rawBody);
+
   if (interaction.type === 1) return respond({ type: 1 });
+
   if (interaction.type === 2) {
     const { name, options = [] } = interaction.data;
     const guildId = interaction.guild_id;
@@ -163,6 +192,7 @@ export default async function handler(req) {
       return respond({ type: 4, data: { content: `❌ Erro: ${err.message}`, flags: 64 } });
     }
   }
+
   return new Response('Tipo desconhecido', { status: 400 });
 }
 

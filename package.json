@@ -1,0 +1,15 @@
+{
+  "name": "discord-setup-bot",
+  "version": "1.0.0",
+  "description": "Bot Discord para configurar servidores via Slash Commands, hospedado no Vercel",
+  "type": "module",
+  "scripts": {
+    "register": "node register-commands.js"
+  },
+  "dependencies": {
+    "discord-interactions": "^3.4.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

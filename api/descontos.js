@@ -9,67 +9,73 @@ const CANAIS = {
   games:      process.env.CANAL_GAMES_OFERTA,
 };
 
-// Feeds RSS públicos que não bloqueiam servidores
-const FEEDS = [
-  { url: 'https://clubedospoupadores.com/feed',         fonte: 'Clube dos Poupadores', canal: 'ofertas',    cor: 0xe74c3c, emoji: '🔥' },
-  { url: 'https://www.tudocelular.com/rss.xml',         fonte: 'Tudo Celular',         canal: 'tecnologia', cor: 0x3498db, emoji: '📱' },
-  { url: 'https://www.tecmundo.com.br/rss',             fonte: 'TecMundo',             canal: 'tecnologia', cor: 0x2980b9, emoji: '💻' },
-  { url: 'https://ge.globo.com/rss/ge/',                fonte: 'Mercado Esportes',     canal: 'games',      cor: 0x9b59b6, emoji: '🎮' },
-  { url: 'https://feeds.feedburner.com/MdeMulher',      fonte: 'M de Mulher',          canal: 'roupas',     cor: 0xff6b6b, emoji: '👗' },
-  { url: 'https://casavogue.globo.com/rss',             fonte: 'Casa Vogue',           canal: 'casa',       cor: 0x2ecc71, emoji: '🏠' },
+const BUSCAS = [
+  { query: 'oferta do dia',          canal: 'ofertas',    cor: 0xe74c3c, emoji: '🔥', fonte: 'Mercado Livre' },
+  { query: 'camiseta roupa',         canal: 'roupas',     cor: 0xff6b6b, emoji: '👕', fonte: 'Mercado Livre' },
+  { query: 'notebook celular',       canal: 'tecnologia', cor: 0x3498db, emoji: '💻', fonte: 'Mercado Livre' },
+  { query: 'decoracao casa',         canal: 'casa',       cor: 0x2ecc71, emoji: '🏠', fonte: 'Mercado Livre' },
+  { query: 'jogo ps5 xbox nintendo', canal: 'games',      cor: 0x9b59b6, emoji: '🎮', fonte: 'Mercado Livre' },
 ];
 
 const posted = new Set();
 
-function extrairTexto(str) {
-  if (!str) return '';
-  return str.replace(/<[^>]*>/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim();
-}
-
-function extrairImagem(xml) {
-  const media = xml.match(/<media:content[^>]+url="([^"]+)"/);
-  if (media) return media[1];
-  const enc = xml.match(/<enclosure[^>]+url="([^"]+)"/);
-  if (enc) return enc[1];
-  const img = xml.match(/<img[^>]+src="([^"]+)"/);
-  if (img) return img[1];
-  return null;
-}
-
-async function parseFeed(feed) {
+async function buscarOfertas(busca) {
   try {
-    const res = await fetch(feed.url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0; +https://discord.com)' },
+    // Sem token — busca pública conforme documentação oficial
+    const url = `https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(busca.query)}&sort=relevance&limit=3`;
+    const res = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)',
+      },
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return [];
-    const xml = await res.text();
-    const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+    const json = await res.json();
+    const items = (json.results || []).filter(i => i.price > 10);
 
     return items.slice(0, 1).map(item => {
-      const titulo = extrairTexto(item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || '');
-      const link = extrairTexto(item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || '');
-      const desc = extrairTexto(item.match(/<description>([\s\S]*?)<\/description>/)?.[1] || '').slice(0, 300);
-      const imagem = extrairImagem(item);
-      return { titulo, link, desc, imagem, fonte: feed.fonte, canal: feed.canal, cor: feed.cor, emoji: feed.emoji };
+      const desconto = item.original_price
+        ? Math.round((1 - item.price / item.original_price) * 100)
+        : null;
+      const preco = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.price);
+      const precoOriginal = item.original_price
+        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.original_price)
+        : null;
+
+      let desc = `💰 **Preço:** ${preco}`;
+      if (precoOriginal) desc += `\n~~De: ${precoOriginal}~~`;
+      if (desconto && desconto > 0) desc += `\n🏷️ **${desconto}% de desconto!**`;
+      if (item.shipping?.free_shipping) desc += '\n🚚 **Frete grátis!**';
+
+      return {
+        titulo: item.title?.slice(0, 200) || '',
+        link: item.permalink || '',
+        desc,
+        imagem: item.thumbnail?.replace('I.jpg', 'O.jpg') || null,
+        fonte: busca.fonte,
+        canal: busca.canal,
+        cor: busca.cor,
+        emoji: busca.emoji,
+      };
     }).filter(n => n.titulo && n.link && !posted.has(n.titulo));
   } catch {
     return [];
   }
 }
 
-async function postarNoDiscord(canalId, item) {
+async function postarNoDiscord(canalId, oferta) {
   if (!canalId) return;
-  posted.add(item.titulo);
+  posted.add(oferta.titulo);
   const embed = {
-    title: `${item.emoji} ${item.titulo}`.slice(0, 256),
-    url: item.link,
-    description: item.desc || null,
-    color: item.cor,
-    footer: { text: `🛍️ ${item.fonte}` },
+    title: `${oferta.emoji} ${oferta.titulo}`.slice(0, 256),
+    url: oferta.link,
+    description: oferta.desc || null,
+    color: oferta.cor,
+    footer: { text: `🛍️ ${oferta.fonte} • Clique no título para comprar` },
     timestamp: new Date().toISOString(),
   };
-  if (item.imagem) embed.image = { url: item.imagem };
+  if (oferta.imagem) embed.thumbnail = { url: oferta.imagem };
   await fetch(`https://discord.com/api/v10/channels/${canalId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' },
@@ -88,17 +94,17 @@ export default async function handler(req) {
   let total = 0;
   const erros = [];
 
-  for (const feed of FEEDS) {
+  for (const busca of BUSCAS) {
     try {
-      const items = await parseFeed(feed);
-      const canalId = CANAIS[feed.canal];
-      for (const item of items) {
-        await postarNoDiscord(canalId, item);
+      const ofertas = await buscarOfertas(busca);
+      const canalId = CANAIS[busca.canal];
+      for (const oferta of ofertas) {
+        await postarNoDiscord(canalId, oferta);
         total++;
         await new Promise(r => setTimeout(r, 500));
       }
     } catch (e) {
-      erros.push(`${feed.fonte}: ${e.message}`);
+      erros.push(`${busca.canal}: ${e.message}`);
     }
   }
 

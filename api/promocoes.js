@@ -15,15 +15,26 @@ export default async function handler(req) {
     });
   }
 
-  // Testa Amazon ofertas do dia
-  const amazon = await scrape('https://www.amazon.com.br/deals');
-  
-  // Testa ML ofertas
   const ml = await scrape('https://www.mercadolivre.com.br/ofertas');
+  const html = ml.html;
+
+  // Procura por padrões de produto no HTML do ML
+  const temPreco = html.includes('andes-money-amount');
+  const temTitulo = html.includes('poly-component__title');
+  const temLink = html.includes('mercadolivre.com.br/p/');
+  const temImagem = html.includes('mlstatic.com');
+
+  // Tenta extrair um trecho com produto
+  const idx = html.indexOf('poly-component__title');
+  const trechoTitulo = idx > -1 ? html.slice(idx - 200, idx + 500) : 'não encontrado';
+
+  const idx2 = html.indexOf('andes-money-amount__fraction');
+  const trechoPreco = idx2 > -1 ? html.slice(idx2 - 100, idx2 + 300) : 'não encontrado';
 
   return new Response(JSON.stringify({
-    amazon: { status: amazon.status, preview: amazon.html.slice(0, 800) },
-    ml: { status: ml.status, preview: ml.html.slice(0, 800) },
+    temPreco, temTitulo, temLink, temImagem,
+    trechoTitulo,
+    trechoPreco,
   }, null, 2), { headers: { 'Content-Type': 'application/json' } });
 }
 

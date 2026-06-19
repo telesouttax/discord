@@ -12,9 +12,8 @@ const commands = [
         type: 3,
         required: true,
         choices: [
-          { name: '🏘️ Comunidade geral', value: 'comunidade' },
-          { name: '🎮 Gaming / jogos', value: 'gaming' },
-          { name: '📚 Grupo de estudos', value: 'estudo' },
+          { name: '🚀 Completo (negócios + estudos + notícias + descontos)', value: 'completo' },
+          { name: '😎 Amigos (simples e descontraído)', value: 'amigos' },
         ],
       },
     ],
@@ -25,10 +24,7 @@ const commands = [
     options: [
       { name: 'nome', description: 'Nome do canal', type: 3, required: true },
       {
-        name: 'tipo',
-        description: 'Tipo do canal',
-        type: 3,
-        required: true,
+        name: 'tipo', description: 'Tipo do canal', type: 3, required: true,
         choices: [
           { name: '💬 Texto', value: 'texto' },
           { name: '🔊 Voz', value: 'voz' },
@@ -60,41 +56,16 @@ const commands = [
   },
 ];
 
-export default async function handler(req) {
-  const secret = req.headers.get('x-register-secret');
-  if (secret !== process.env.REGISTER_SECRET) {
-    return new Response(JSON.stringify({ error: 'Não autorizado' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  const res = await fetch(
-    `https://discord.com/api/v10/applications/${APP_ID}/commands`,
-    {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bot ${BOT_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(commands),
-    }
-  );
-
-  if (!res.ok) {
-    const err = await res.text();
-    return new Response(JSON.stringify({ error: err }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
+async function registerCommands() {
+  const res = await fetch(`https://discord.com/api/v10/applications/${APP_ID}/commands`, {
+    method: 'PUT',
+    headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(commands),
+  });
+  if (!res.ok) { const err = await res.text(); console.error('Erro:', err); process.exit(1); }
   const data = await res.json();
-  const names = data.map(c => '/' + c.name);
-  return new Response(
-    JSON.stringify({ ok: true, message: `${data.length} comandos registrados!`, comandos: names }),
-    { headers: { 'Content-Type': 'application/json' } }
-  );
+  console.log(`✅ ${data.length} comandos registrados!`);
+  data.forEach(cmd => console.log(`   /${cmd.name}`));
 }
 
-export const config = { runtime: 'edge' };
+registerCommands();

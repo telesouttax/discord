@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Painel — Construct Bot</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#1a1b1e;color:#e0e0e0;min-height:100vh}
+  .login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh}
+  .login-card{background:#2b2d31;border-radius:16px;padding:2.5rem;width:100%;max-width:380px;text-align:center}
+  .login-card h1{font-size:1.5rem;color:#fff;margin-bottom:.5rem}
+  .login-card p{color:#888;font-size:14px;margin-bottom:1.5rem}
+  .logo{font-size:3rem;margin-bottom:1rem}
+  input[type=password]{width:100%;padding:12px 16px;background:#1a1b1e;border:1px solid #3a3b3e;border-radius:8px;color:#fff;font-size:15px;margin-bottom:1rem;outline:none}
+  input[type=password]:focus{border-color:#5865f2}
+  .btn{width:100%;padding:12px;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;transition:.2s}
+  .btn-primary{background:#5865f2;color:#fff}
+  .btn-primary:hover{background:#4752c4}
+  .error{color:#ed4245;font-size:13px;margin-top:.5rem}
+  /* Painel */
+  .painel{display:none;padding:2rem;max-width:1000px;margin:0 auto}
+  .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:2rem}
+  .header h1{font-size:1.5rem;color:#fff}
+  .header-btns{display:flex;gap:8px}
+  .btn-sm{padding:8px 16px;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer}
+  .btn-danger{background:#ed4245;color:#fff}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin-bottom:2rem}
+  .card{background:#2b2d31;border-radius:12px;padding:1.5rem}
+  .card-header{display:flex;align-items:center;gap:10px;margin-bottom:1rem}
+  .card-icon{font-size:1.5rem}
+  .card-title{font-size:15px;font-weight:600;color:#fff}
+  .card-desc{font-size:13px;color:#888;margin-bottom:1rem;line-height:1.5}
+  .status{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:1rem}
+  .dot{width:8px;height:8px;border-radius:50%}
+  .dot-green{background:#23a55a}
+  .dot-gray{background:#888}
+  .dot-yellow{background:#f0b232}
+  .btn-action{width:100%;padding:10px;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;background:#5865f2;color:#fff;transition:.2s}
+  .btn-action:hover{background:#4752c4}
+  .btn-action:disabled{background:#3a3b3e;color:#666;cursor:not-allowed}
+  .result{margin-top:10px;padding:10px;background:#1a1b1e;border-radius:8px;font-size:12px;font-family:monospace;color:#23a55a;display:none;word-break:break-all}
+  .result.error{color:#ed4245}
+  .log-section{background:#2b2d31;border-radius:12px;padding:1.5rem}
+  .log-title{font-size:15px;font-weight:600;color:#fff;margin-bottom:1rem}
+  .log-list{list-style:none;max-height:200px;overflow-y:auto}
+  .log-item{font-size:12px;font-family:monospace;padding:6px 0;border-bottom:1px solid #3a3b3e;color:#aaa}
+  .log-item:last-child{border-bottom:none}
+  .log-item span{color:#23a55a}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .badge{font-size:11px;padding:2px 8px;border-radius:20px;background:#5865f220;color:#5865f2;margin-left:6px}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="loginWrap">
+  <div class="login-card">
+    <div class="logo">🤖</div>
+    <h1>Construct Bot</h1>
+    <p>Painel de controle — faça login para continuar</p>
+    <input type="password" id="senhaInput" placeholder="Digite sua senha..." onkeydown="if(event.key==='Enter')login()"/>
+    <button class="btn btn-primary" onclick="login()">Entrar</button>
+    <div class="error" id="loginError"></div>
+  </div>
+</div>
+
+<!-- PAINEL -->
+<div class="painel" id="painelWrap">
+  <div class="header">
+    <div>
+      <h1>🤖 Construct Bot <span class="badge">Painel</span></h1>
+      <p style="color:#888;font-size:13px;margin-top:4px">Servidor: discord-one-steel.vercel.app</p>
+    </div>
+    <div class="header-btns">
+      <button class="btn-sm btn-danger" onclick="logout()">Sair</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- Notícias -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon">📰</div>
+        <div class="card-title">Bot de Notícias</div>
+      </div>
+      <div class="card-desc">Busca notícias do G1 e posta nos canais de texto. Roda automaticamente a cada 1 hora.</div>
+      <div class="status"><div class="dot dot-green"></div> Ativo — a cada 1 hora</div>
+      <button class="btn-action" onclick="disparar('noticias', this)">▶ Disparar agora</button>
+      <div class="result" id="res-noticias"></div>
+    </div>
+
+    <!-- Promoções -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon">🔥</div>
+        <div class="card-title">Bot de Promoções</div>
+      </div>
+      <div class="card-desc">Busca 10 ofertas do Mercado Livre e posta no canal ofertas-do-dia. Roda 1x por dia.</div>
+      <div class="status"><div class="dot dot-green"></div> Ativo — 1x por dia</div>
+      <button class="btn-action" onclick="disparar('promocoes', this)">▶ Disparar agora</button>
+      <div class="result" id="res-promocoes"></div>
+    </div>
+
+    <!-- Clima -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon">🌤️</div>
+        <div class="card-title">Bot de Clima</div>
+      </div>
+      <div class="card-desc">Posta a previsão do tempo do Rio de Janeiro todo dia às 7h da manhã.</div>
+      <div class="status"><div class="dot dot-green"></div> Ativo — todo dia às 7h</div>
+      <button class="btn-action" onclick="disparar('clima', this)">▶ Disparar agora</button>
+      <div class="result" id="res-clima"></div>
+    </div>
+
+    <!-- Registrar Comandos -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon">⚙️</div>
+        <div class="card-title">Slash Commands</div>
+      </div>
+      <div class="card-desc">Registra os comandos /setup, /criar-canal, /criar-cargo e outros no servidor Discord.</div>
+      <div class="status"><div class="dot dot-gray"></div> Manual</div>
+      <button class="btn-action" onclick="disparar('register', this)">▶ Registrar comandos</button>
+      <div class="result" id="res-register"></div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="log-section">
+    <div class="log-title">📋 Histórico de ações</div>
+    <ul class="log-list" id="logList">
+      <li class="log-item" style="color:#555">Nenhuma ação executada ainda.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+let token = localStorage.getItem('painel_token') || '';
+const BASE = '';
+
+function addLog(msg, ok) {
+  const list = document.getElementById('logList');
+  if (list.children[0]?.style.color === 'rgb(85, 85, 85)') list.innerHTML = '';
+  const li = document.createElement('li');
+  li.className = 'log-item';
+  const hora = new Date().toLocaleTimeString('pt-BR');
+  li.innerHTML = `<span>[${hora}]</span> ${ok ? '✅' : '❌'} ${msg}`;
+  list.prepend(li);
+}
+
+async function login() {
+  const senha = document.getElementById('senhaInput').value;
+  const err = document.getElementById('loginError');
+  err.textContent = '';
+  try {
+    const res = await fetch('/api/painel-auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ senha }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      token = data.token;
+      localStorage.setItem('painel_token', token);
+      mostrarPainel();
+    } else {
+      err.textContent = 'Senha incorreta.';
+    }
+  } catch {
+    err.textContent = 'Erro de conexão.';
+  }
+}
+
+function logout() {
+  localStorage.removeItem('painel_token');
+  token = '';
+  document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('painelWrap').style.display = 'none';
+}
+
+function mostrarPainel() {
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('painelWrap').style.display = 'block';
+}
+
+async function disparar(bot, btn) {
+  const resEl = document.getElementById(`res-${bot}`);
+  const textoOriginal = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Executando...';
+  resEl.style.display = 'none';
+  resEl.className = 'result';
+
+  try {
+    const secret = atob(token);
+    const url = bot === 'register'
+      ? `/api/register`
+      : `/api/${bot}?secret=${encodeURIComponent(secret)}`;
+
+    const options = bot === 'register'
+      ? { method: 'POST', headers: { 'x-register-secret': secret } }
+      : {};
+
+    const res = await fetch(url, options);
+    const data = await res.json();
+
+    resEl.textContent = JSON.stringify(data, null, 2);
+    resEl.style.display = 'block';
+    addLog(`${bot} executado — ${JSON.stringify(data).slice(0, 80)}`, res.ok);
+  } catch (e) {
+    resEl.textContent = `Erro: ${e.message}`;
+    resEl.className = 'result error';
+    resEl.style.display = 'block';
+    addLog(`${bot} falhou — ${e.message}`, false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = textoOriginal;
+  }
+}
+
+// Auto-login se já tem token
+if (token) mostrarPainel();
+</script>
+</body>
+</html>

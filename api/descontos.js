@@ -1,20 +1,66 @@
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CRON_SECRET = process.env.CRON_SECRET;
-const ML_CLIENT_ID = process.env.ML_CLIENT_ID;
-const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET;
 
-async function getAccessToken() {
-  const res = await fetch('https://api.mercadolibre.com/oauth/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: ML_CLIENT_ID,
-      client_secret: ML_CLIENT_SECRET,
-    }),
-  });
-  const json = await res.json();
-  return { status: res.status, token: json.access_token, error: json.error };
+const CANAIS = {
+  ofertas:    process.env.CANAL_OFERTAS_DIA,
+  roupas:     process.env.CANAL_ROUPAS,
+  tecnologia: process.env.CANAL_TECH_OFERTA,
+  casa:       process.env.CANAL_CASA,
+  games:      process.env.CANAL_GAMES_OFERTA,
+};
+
+const FEEDS = [
+  { url: 'https://www.pelando.com.br/sitemap-deals.xml',  fonte: 'Pelando', canal: 'ofertas',    cor: 0xe74c3c, emoji: '🔥' },
+];
+
+// Busca deals do Pelando via sitemap público
+async function buscarPelando() {
+  try {
+    const res = await fetch('https://www.pelando.com.br/sitemap-deals.xml', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)' },
+      signal: AbortSignal.timeout(10000),
+    });
+    const status = res.status;
+    const text = await res.text();
+    return { status, preview: text.slice(0, 300) };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+async function buscarPelandoAPI() {
+  try {
+    const res = await fetch('https://www.pelando.com.br/api/deals/hot?page=1&pageSize=5', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)',
+        'Accept': 'application/json',
+        'Referer': 'https://www.pelando.com.br',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    const status = res.status;
+    const text = await res.text();
+    return { status, preview: text.slice(0, 500) };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+async function buscarPromobit() {
+  try {
+    const res = await fetch('https://www.promobit.com.br/api/offers?page=1&per_page=3', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)',
+        'Accept': 'application/json',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    const status = res.status;
+    const text = await res.text();
+    return { status, preview: text.slice(0, 500) };
+  } catch (e) {
+    return { error: e.message };
+  }
 }
 
 export default async function handler(req) {
@@ -25,25 +71,16 @@ export default async function handler(req) {
     });
   }
 
-  const { status: tokenStatus, token, error: tokenError } = await getAccessToken();
-
-  if (!token) {
-    return new Response(JSON.stringify({ tokenStatus, tokenError }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  // Testa busca por categoria MLB1648 (Tecnologia)
-  const searchRes = await fetch('https://api.mercadolibre.com/sites/MLB/search?category=MLB1648&limit=1', {
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-  });
-  const searchStatus = searchRes.status;
-  const searchBody = await searchRes.text();
+  const [pelando, pelandoApi, promobit] = await Promise.all([
+    buscarPelando(),
+    buscarPelandoAPI(),
+    buscarPromobit(),
+  ]);
 
   return new Response(JSON.stringify({
-    token_ok: tokenStatus === 200,
-    search_status: searchStatus,
-    search_preview: searchBody.slice(0, 500),
+    pelando_sitemap: pelando,
+    pelando_api: pelandoApi,
+    promobit_api: promobit,
   }, null, 2), { headers: { 'Content-Type': 'application/json' } });
 }
 

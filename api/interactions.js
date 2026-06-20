@@ -57,7 +57,7 @@ async function zoarImagem(avatarUrl, efeito) {
   const transformation = efeito.transformacao;
 
   // Gera assinatura
-  const strToSign = `timestamp=${timestamp}&upload_preset=ml_default`;
+  const strToSign = `timestamp=${timestamp}&upload_preset=discord_zoar`;
   const encoder = new TextEncoder();
   const keyData = encoder.encode(CLOUDINARY_SECRET);
   const msgData = encoder.encode(strToSign);

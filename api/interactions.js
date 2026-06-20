@@ -52,27 +52,12 @@ const EFEITOS = [
 ];
 
 async function zoarImagem(avatarUrl, efeito) {
-  // Faz upload da imagem para o Cloudinary
-  const timestamp = Math.floor(Date.now() / 1000);
   const transformation = efeito.transformacao;
 
-  // Gera assinatura
-  const strToSign = `timestamp=${timestamp}&upload_preset=discord_zoar`;
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(CLOUDINARY_SECRET);
-  const msgData = encoder.encode(strToSign);
-
-  const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const sig = await crypto.subtle.sign('HMAC', cryptoKey, msgData);
-  const signature = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-  // Upload via URL
+  // Passo 1: Upload simples sem transformação (unsigned)
   const formData = new URLSearchParams();
   formData.append('file', avatarUrl);
-  formData.append('upload_preset', 'ml_default');
-  formData.append('timestamp', timestamp.toString());
-  formData.append('api_key', CLOUDINARY_KEY);
-  formData.append('transformation', transformation);
+  formData.append('upload_preset', 'discord_zoar');
 
   const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {
     method: 'POST',
@@ -82,7 +67,8 @@ async function zoarImagem(avatarUrl, efeito) {
   if (!uploadRes.ok) throw new Error(`Cloudinary upload failed: ${await uploadRes.text()}`);
   const uploadData = await uploadRes.json();
 
-  // Aplica transformação na URL
+  // Passo 2: Aplica transformação diretamente na URL gerada (não precisa de auth)
+  // Cloudinary suporta transformações on-the-fly via URL
   const urlParts = uploadData.secure_url.split('/upload/');
   return `${urlParts[0]}/upload/${transformation}/${urlParts[1]}`;
 }
